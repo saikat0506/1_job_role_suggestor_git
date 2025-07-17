@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Job Role Suggester</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PDF.js library to read PDF files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <style>
+        /* Custom style for the file input button */
+        input[type="file"]::file-selector-button {
+            background-color: #4f46e5; color: white; border: none; padding: 0.5rem 1rem;
+            border-radius: 0.5rem; cursor: pointer; transition: background-color 0.2s;
+        }
+        input[type="file"]::file-selector-button:hover { background-color: #4338ca; }
+        /* Style for the initial API key prompt overlay */
+        #api-key-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.5); display: flex;
+            align-items: center; justify-content: center; z-index: 9999;
+        }
+        #api-key-modal {
+            background: white; padding: 2rem; border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 90%; max-width: 400px;
+        }
+        .gemini-feature-btn {
+            background-color: #ede9fe; color: #5b21b6; font-weight: 600;
+            padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem;
+            transition: all 0.2s; border: 1px solid #c4b5fd;
+        }
+        .gemini-feature-btn:hover { background-color: #d8b4fe; transform: translateY(-1px); }
+    </style>
+</head>
+<body class="bg-slate-100 text-gray-800 font-sans flex items-center justify-center min-h-screen p-4">
+
+    <!-- API Key Prompt Modal -->
+    <div id="api-key-overlay">
+        <div id="api-key-modal" class="text-center space-y-4">
+            <h2 class="text-xl font-bold text-indigo-600">API Key Required</h2>
+            <p class="text-gray-600">Please enter your Google Gemini API key to use this application.</p>
+            <input type="password" id="api-key-input" class="w-full px-3 py-2 border border-gray-300 rounded-md" placeholder="Paste your API key here">
+            <button id="api-key-submit" class="w-full bg-indigo-600 text-white font-bold py-2 px-4 rounded-md hover:bg-indigo-700">Submit Key</button>
+        </div>
+    </div>
+
+    <!-- Main Application Content (Initially Hidden) -->
+    <div id="main-content" class="w-full max-w-2xl bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6" style="display: none;">
+        <div class="text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-indigo-600">AI Job Role Suggester</h1>
+            <p class="text-gray-500 mt-2">Upload your resume (PDF) and let AI find the perfect job for you.</p>
+        </div>
+        <div>
+            <label for="resume-upload" class="block mb-2 text-sm font-medium text-gray-600">Upload Your Resume:</label>
+            <input id="resume-upload" type="file" accept=".pdf" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 cursor-pointer">
+        </div>
+        <div id="status-box" class="hidden p-4 rounded-lg text-center font-medium">
+            <p id="status-message"></p>
+        </div>
+        <div id="results-box" class="hidden space-y-6 pt-4 border-t border-slate-200">
+            <!-- Results sections... -->
+            <div>
+                <h2 class="text-2xl font-bold text-indigo-700">Top Prediction</h2>
+                <div id="top-prediction" class="mt-2 p-4 bg-slate-50 rounded-lg border-l-4 border-indigo-500"></div>
+            </div>
+            <div id="gemini-features-container" class="hidden space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-2">✨ AI-Powered Insights</h3>
+                    <div class="flex flex-wrap gap-2">
+                         <button id="interview-q-btn" class="gemini-feature-btn">Generate Interview Questions</button>
+                         <button id="career-path-btn" class="gemini-feature-btn">Suggest Career Path</button>
+                    </div>
+                </div>
+                <div id="gemini-output" class="p-4 bg-violet-50 rounded-lg border border-violet-200 text-sm text-gray-700 hidden"></div>
+            </div>
+             <div>
+                <h3 class="text-xl font-semibold text-gray-700">Extracted Skills</h3>
+                <div id="extracted-skills" class="mt-2 flex flex-wrap gap-2"></div>
+            </div>
+            <div>
+                <h3 class="text-xl font-semibold text-gray-700">Other Suggestions</h3>
+                <div id="other-suggestions" class="mt-2 space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let geminiApiKey = null; 
+        let currentTopRole = null;
+        let currentKeywords = [];
+
+        // This function will run once the entire page is loaded.
+        function initializeApp() {
+            console.log("initializeApp: Page loaded, starting script.");
+
+            const apiKeyOverlay = document.getElementById('api-key-overlay');
+            const apiKeyInput = document.getElementById('api-key-input');
+            const apiKeySubmit = document.getElementById('api-key-submit');
+            const mainContent = document.getElementById('main-content');
+            const fileInput = document.getElementById('resume-upload');
+
+            if (!apiKeyOverlay || !apiKeyInput || !apiKeySubmit || !mainContent || !fileInput) {
+                console.error("initializeApp: CRITICAL ERROR - A required HTML element was not found. Check all element IDs.");
+                return;
+            }
+            console.log("initializeApp: All required elements found.");
+
+            const submitKey = () => {
+                console.log("submitKey: Function called.");
+                const key = apiKeyInput.value;
+
+                if (key && key.trim() !== "") {
+                    console.log("submitKey: API key is valid. Hiding overlay and showing main content.");
+                    geminiApiKey = key.trim();
+                    apiKeyOverlay.style.display = 'none'; // More direct way to hide
+                    mainContent.style.display = 'block'; // More direct way to show
+                    console.log("submitKey: Overlay should now be hidden.");
+                } else {
+                    console.warn("submitKey: API key is empty. Alerting user.");
+                    alert("A valid API key is required to proceed.");
+                }
+            };
+
+            console.log("initializeApp: Attaching event listeners.");
+            apiKeySubmit.addEventListener('click', submitKey);
+            apiKeyInput.addEventListener('keyup', (event) => {
+                if (event.key === 'Enter') {
+                    console.log("initializeApp: Enter key pressed.");
+                    submitKey();
+                }
+            });
+
+            fileInput.addEventListener('change', handleFileSelect);
+            console.log("initializeApp: Setup complete. Waiting for user interaction.");
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeApp);
+        
+        // --- The rest of your helper functions remain the same ---
+        const statusBox = document.getElementById('status-box');
+        const statusMessage = document.getElementById('status-message');
+        const resultsBox = document.getElementById('results-box');
+        const topPredictionEl = document.getElementById('top-prediction');
+        const otherSuggestionsEl = document.getElementById('other-suggestions');
+        const extractedSkillsEl = document.getElementById('extracted-skills');
+        const geminiFeaturesContainer = document.getElementById('gemini-features-container');
+        const geminiOutput = document.getElementById('gemini-output');
+        const interviewQBtn = document.getElementById('interview-q-btn');
+        const careerPathBtn = document.getElementById('career-path-btn');
+        
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
+
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            resultsBox.style.display = 'none';
+            geminiFeaturesContainer.style.display = 'none';
+            geminiOutput.style.display = 'none';
+            try {
+                updateStatus('Parsing your resume...', 'info');
+                const resumeText = await parsePdf(file);
+                updateStatus('Extracting keywords with AI...', 'info');
+                currentKeywords = await extractKeywordsWithGemini(resumeText);
+                displaySkills(currentKeywords);
+                updateStatus('Analyzing skills and predicting job roles...', 'info');
+                const prediction = await getJobPrediction(currentKeywords);
+                updateStatus('Analysis Complete!', 'success');
+                displayResults(prediction);
+                setTimeout(() => { statusBox.style.display = 'none'; }, 2000);
+            } catch (error) {
+                console.error("Workflow failed:", error);
+                updateStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+        interviewQBtn.addEventListener('click', async () => {
+            if (!currentTopRole) return;
+            geminiOutput.innerHTML = '<p>✨ Generating interview questions...</p>';
+            geminiOutput.style.display = 'block';
+            try {
+                const questions = await getInterviewQuestions(currentTopRole);
+                geminiOutput.innerHTML = questions;
+            } catch (error) {
+                geminiOutput.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            }
+        });
+        careerPathBtn.addEventListener('click', async () => {
+            if (!currentTopRole || currentKeywords.length === 0) return;
+            geminiOutput.innerHTML = '<p>✨ Suggesting a potential career path...</p>';
+            geminiOutput.style.display = 'block';
+            try {
+                const path = await getCareerPath(currentTopRole, currentKeywords);
+                geminiOutput.innerHTML = path;
+            } catch (error) {
+                geminiOutput.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            }
+        });
+        function updateStatus(message, type) {
+            statusBox.style.display = 'block';
+            statusBox.className = 'p-4 rounded-lg text-center font-medium'; // Reset classes
+            statusMessage.textContent = message;
+            if (type === 'info') statusBox.classList.add('bg-blue-100', 'text-blue-800');
+            else if (type === 'error') statusBox.classList.add('bg-red-100', 'text-red-800');
+            else if (type === 'success') statusBox.classList.add('bg-green-100', 'text-green-800');
+        }
+        async function parsePdf(file) {
+            const fileReader = new FileReader();
+            return new Promise((resolve, reject) => {
+                fileReader.onload = async function() {
+                    const typedarray = new Uint8Array(this.result);
+                    try {
+                        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                        let fullText = '';
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            fullText += textContent.items.map(item => item.str).join(' ') + '\n';
+                        }
+                        resolve(fullText);
+                    } catch (error) { reject(new Error("Could not read the PDF file.")); }
+                };
+                fileReader.onerror = () => reject(new Error("Failed to read the file."));
+                fileReader.readAsArrayBuffer(file);
+            });
+        }
+        async function callGemini(prompt) {
+            if (!geminiApiKey) throw new Error("Gemini API key is not available.");
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiApiKey}`;
+            const payload = { contents: [{ parts: [{ text: prompt }] }] };
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            if (!response.ok) throw new Error("Failed to get response from Gemini API.");
+            const result = await response.json();
+            return result.candidates[0].content.parts[0].text;
+        }
+        async function extractKeywordsWithGemini(text) {
+            const prompt = `From the following resume text, extract a list of all relevant professional skills. Return the skills as a simple JSON array of strings. Example: ["Python", "Project Management", "AWS"]. Resume text: "${text}"`;
+            const rawText = await callGemini(prompt);
+            const jsonStringMatch = rawText.match(/\[.*\]/s);
+            if (!jsonStringMatch) throw new Error("Could not find a valid JSON array in the Gemini response.");
+            return JSON.parse(jsonStringMatch[0]);
+        }
+        async function getInterviewQuestions(role) {
+            const prompt = `You are an expert career coach. Generate a list of 5 common and insightful interview questions for a "${role}" position. Include one behavioral question, one technical question, and one situational question. Format the response as an HTML unordered list.`;
+            return await callGemini(prompt);
+        }
+        async function getCareerPath(role, skills) {
+            const prompt = `You are a helpful career advisor. Based on the job role "${role}" and the skills [${skills.join(', ')}], suggest a potential career path. What is a logical next step or a more senior role? What 2-3 key skills should this person learn to get there? Format the response as a short paragraph followed by an HTML unordered list for the skills.`;
+            return await callGemini(prompt);
+        }
+        async function getJobPrediction(keywords) {
+            const apiUrl = 'http://127.0.0.1:8000/api/predict';
+            const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skills: keywords }) });
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || "Could not connect to the prediction API.");
+            }
+            return response.json();
+        }
+        function displaySkills(keywords) {
+            extractedSkillsEl.innerHTML = '';
+            keywords.forEach(skill => {
+                const skillTag = document.createElement('span');
+                skillTag.className = 'bg-indigo-100 text-indigo-800 px-3 py-1 text-sm font-medium rounded-full';
+                skillTag.textContent = skill;
+                extractedSkillsEl.appendChild(skillTag);
+            });
+        }
+        function displayResults(prediction) {
+            resultsBox.style.display = 'block';
+            currentTopRole = prediction.suggestions[0].role;
+            topPredictionEl.innerHTML = `<h4 class="text-xl font-semibold text-gray-800">${currentTopRole}</h4><p class="text-gray-600">Confidence: <span class="font-bold text-indigo-600">${prediction.suggestions[0].confidence}</span></p>`;
+            otherSuggestionsEl.innerHTML = '';
+            prediction.suggestions.slice(1).forEach(suggestion => {
+                const suggestionDiv = document.createElement('div');
+                suggestionDiv.className = 'p-3 bg-slate-50 rounded-md';
+                suggestionDiv.innerHTML = `<p class="font-medium text-gray-700">${suggestion.role}</p><p class="text-sm text-gray-500">Confidence: <span class="font-semibold text-indigo-500">${suggestion.confidence}</span></p>`;
+                otherSuggestionsEl.appendChild(suggestionDiv);
+            });
+            geminiFeaturesContainer.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
