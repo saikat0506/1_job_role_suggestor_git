@@ -58,7 +58,7 @@ def load_assets():
             print("CRITICAL WARNING: GOOGLE_API_KEY environment variable not found.")
             # The app will fail if the key is not set in the deployment environment
         genai.configure(api_key=gemini_api_key)
-        gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash-latest')
         print("Gemini API configured successfully.")
     except Exception as e:
         print(f"CRITICAL ERROR: Failed to configure Gemini API: {e}")
