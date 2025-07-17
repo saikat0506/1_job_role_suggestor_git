@@ -65,7 +65,7 @@ def load_assets():
     # 2. Load XGBoost Model Assets
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        MODEL_DIR = os.path.join(script_dir, 'model_training', 'saved_model_xgboost_gpu')
+        MODEL_DIR = os.path.join(script_dir, 'model_training', 'saved_model_xgboost')
         
         print(f"Attempting to load XGBoost assets from: '{MODEL_DIR}'")
         if not os.path.isdir(MODEL_DIR):
