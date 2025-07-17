@@ -27,7 +27,7 @@ class ResumeRequest(BaseModel):
 app = FastAPI(
     title="Secure Job Role Prediction API",
     description="Processes resume text to extract skills via Gemini and predicts job roles via XGBoost.",
-    version="3.1.0" # Version updated
+    version="3.2.1" # Version updated
 )
 
 # --- Add CORS Middleware for frontend access ---
@@ -64,10 +64,19 @@ def load_assets():
 
     # 2. Load XGBoost Model Assets
     try:
+        # Get the directory where this script is running from.
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        print(f"DEBUG: Script directory is: {script_dir}")
+        
+        # **THE FIX**: Corrected the folder name to match your project structure
         MODEL_DIR = os.path.join(script_dir, 'model_training', 'saved_model_xgboost')
         
-        print(f"Attempting to load XGBoost assets from: '{MODEL_DIR}'")
+        print(f"DEBUG: Attempting to load XGBoost assets from: '{MODEL_DIR}'")
+        
+        # Add a check to see what's in the parent directory for debugging
+        parent_dir_contents = os.listdir(script_dir)
+        print(f"DEBUG: Contents of script directory: {parent_dir_contents}")
+
         if not os.path.isdir(MODEL_DIR):
             raise FileNotFoundError(f"Directory not found: '{MODEL_DIR}'")
 
@@ -76,7 +85,7 @@ def load_assets():
         encoder_files = sorted([f for f in os.listdir(MODEL_DIR) if f.startswith('xgb_label_encoder')], reverse=True)
 
         if not all([model_files, feature_files, encoder_files]):
-            raise FileNotFoundError("One or more required XGBoost asset files were not found.")
+            raise FileNotFoundError("One or more required XGBoost asset files (.joblib) were not found in the target directory.")
 
         model = joblib.load(os.path.join(MODEL_DIR, model_files[0]))
         feature_list = joblib.load(os.path.join(MODEL_DIR, feature_files[0]))
