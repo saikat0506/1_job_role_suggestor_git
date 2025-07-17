@@ -27,13 +27,13 @@ class ResumeRequest(BaseModel):
 app = FastAPI(
     title="Secure Job Role Prediction API",
     description="Processes resume text to extract skills via Gemini and predicts job roles via XGBoost.",
-    version="3.0.0"
+    version="3.1.0" # Version updated
 )
 
 # --- Add CORS Middleware for frontend access ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins for simplicity; can be restricted in production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,6 +44,7 @@ model = None
 feature_list = None
 label_encoder = None
 feature_lookup = {}
+gemini_model = None
 
 @app.on_event("startup")
 def load_assets():
@@ -52,13 +53,11 @@ def load_assets():
     
     # 1. Configure Gemini API from environment variable
     try:
-        # This is the secure way to access your key on Render
         gemini_api_key = os.getenv("GOOGLE_API_KEY")
         if not gemini_api_key:
             print("CRITICAL WARNING: GOOGLE_API_KEY environment variable not found.")
-            # The app will fail if the key is not set in the deployment environment
         genai.configure(api_key=gemini_api_key)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash-latest')
+        gemini_model = genai.GenerativeModel('gemini-1.5-flash-latest')
         print("Gemini API configured successfully.")
     except Exception as e:
         print(f"CRITICAL ERROR: Failed to configure Gemini API: {e}")
@@ -66,7 +65,6 @@ def load_assets():
     # 2. Load XGBoost Model Assets
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        # This path must match your GitHub repository structure
         MODEL_DIR = os.path.join(script_dir, 'model_training', 'saved_model_xgboost_gpu')
         
         print(f"Attempting to load XGBoost assets from: '{MODEL_DIR}'")
@@ -91,11 +89,17 @@ def load_assets():
         print(f"CRITICAL ERROR: XGBoost model could not be loaded: {e}")
         model = None
 
+# --- Root endpoint for health check ---
+@app.get("/")
+def read_root():
+    """A simple health check endpoint to confirm the API is running."""
+    return {"status": "Secure Job Role Prediction API is running."}
+
 # --- The All-in-One Secure Prediction Endpoint ---
 @app.post("/api/process_resume", response_model=PredictionResponse)
 async def process_resume_and_predict(request: ResumeRequest):
-    if not all([model, feature_list, label_encoder]):
-        raise HTTPException(status_code=503, detail="A required model is not loaded. Check server logs.")
+    if not all([model, feature_list, label_encoder, gemini_model]):
+        raise HTTPException(status_code=503, detail="A required model or API client is not loaded. Check server logs.")
 
     # Step 1: Extract Keywords with Gemini (Securely on the Backend)
     try:
