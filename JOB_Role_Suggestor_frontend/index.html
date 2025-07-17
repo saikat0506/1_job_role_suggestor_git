@@ -124,7 +124,7 @@
 
         async function processResumeOnBackend(text) {
             // IMPORTANT: Update this URL to your live Render URL after deployment
-            const apiUrl = 'http://127.0.0.1:8000/api/process_resume';
+            const apiUrl = 'https://job-role-suggestor-api.onrender.com/api/process_resume';
             
             const response = await fetch(apiUrl, {
                 method: 'POST',
