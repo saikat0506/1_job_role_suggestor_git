@@ -111,8 +111,8 @@
                     throw new Error('Unexpected response from server.');
                 }
             } catch (error) {
-                console.error("Failed to wake up server:", error);
-                serverStatusMessage.textContent = "Could not connect to the AI server. Please try refreshing the page in a minute.";
+                console.error("The backup server is starting :", error);
+                serverStatusMessage.textContent = "The backend server is waking up , keep refreshing the page ";
                 serverStatusOverlay.querySelector('.spinner').classList.add('hidden');
             }
         });
