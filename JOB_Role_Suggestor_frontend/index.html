@@ -13,24 +13,37 @@
         }
         input[type="file"]::file-selector-button:hover { background-color: #4338ca; }
         .gemini-feature-btn {
-            background-color: #ede9fe; /* violet-100 */
-            color: #5b21b6; /* violet-800 */
-            font-weight: 600;
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.875rem;
-            transition: all 0.2s;
-            border: 1px solid #c4b5fd; /* violet-300 */
+            background-color: #ede9fe; color: #5b21b6; font-weight: 600;
+            padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem;
+            transition: all 0.2s; border: 1px solid #c4b5fd;
         }
-        .gemini-feature-btn:hover {
-            background-color: #d8b4fe; /* violet-200 */
-            transform: translateY(-1px);
+        .gemini-feature-btn:hover { background-color: #d8b4fe; transform: translateY(-1px); }
+        /* Simple spinner animation */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #4f46e5;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body class="bg-slate-100 text-gray-800 font-sans flex items-center justify-center min-h-screen p-4">
 
-    <div class="w-full max-w-2xl bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6">
+    <!-- **NEW**: Server Wake-up Overlay -->
+    <div id="server-status-overlay" class="w-full max-w-2xl bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-4 flex flex-col items-center justify-center">
+        <div class="spinner"></div>
+        <h2 id="server-status-message" class="text-xl font-bold text-indigo-600">Waking up the AI server...</h2>
+        <p class="text-gray-500 text-center">This can take up to 60 seconds if the server is sleeping. Please wait.</p>
+    </div>
+
+    <!-- Main Application Content (Initially Hidden) -->
+    <div id="main-content" class="w-full max-w-2xl bg-white rounded-2xl shadow-lg p-6 md:p-8 space-y-6 hidden">
         <div class="text-center">
             <h1 class="text-3xl md:text-4xl font-bold text-indigo-600">AI Job Role Suggester</h1>
             <p class="text-gray-500 mt-2">Upload your resume (PDF) and let our secure AI find the perfect job for you.</p>
@@ -50,7 +63,6 @@
                 <h2 class="text-2xl font-bold text-indigo-700">Top Prediction</h2>
                 <div id="top-prediction" class="mt-2 p-4 bg-slate-50 rounded-lg border-l-4 border-indigo-500"></div>
             </div>
-            <!-- New Gemini Features Section -->
             <div id="gemini-features-container" class="hidden space-y-4">
                 <div>
                     <h3 class="text-xl font-semibold text-gray-700 mb-2">✨ AI-Powered Insights</h3>
@@ -76,6 +88,34 @@
         // --- JAVASCRIPT LOGIC ---
         let currentTopRole = null;
         let currentKeywords = [];
+
+        // **NEW**: This function runs as soon as the page loads
+        document.addEventListener('DOMContentLoaded', async () => {
+            const serverStatusOverlay = document.getElementById('server-status-overlay');
+            const serverStatusMessage = document.getElementById('server-status-message');
+            const mainContent = document.getElementById('main-content');
+            
+            const apiUrl = 'https://job-role-suggestor-api.onrender.com/'; // Health check endpoint
+
+            try {
+                const response = await fetch(apiUrl);
+                if (!response.ok) {
+                    throw new Error('Server responded with an error.');
+                }
+                const data = await response.json();
+                if (data.status) {
+                    console.log("Server is awake:", data.status);
+                    serverStatusOverlay.classList.add('hidden');
+                    mainContent.classList.remove('hidden');
+                } else {
+                    throw new Error('Unexpected response from server.');
+                }
+            } catch (error) {
+                console.error("Failed to wake up server:", error);
+                serverStatusMessage.textContent = "Could not connect to the AI server. Please try refreshing the page in a minute.";
+                serverStatusOverlay.querySelector('.spinner').classList.add('hidden');
+            }
+        });
 
         const fileInput = document.getElementById('resume-upload');
         const statusBox = document.getElementById('status-box');
@@ -103,26 +143,19 @@
             try {
                 updateStatus('Parsing your resume...', 'info');
                 const resumeText = await parsePdf(file);
-                console.log("PDF Parsed.");
-
                 updateStatus('Sending to server for secure analysis...', 'info');
                 const predictionData = await processResumeOnBackend(resumeText);
-                console.log("Prediction received:", predictionData);
-                
                 currentKeywords = predictionData.extracted_keywords;
-
                 updateStatus('Analysis Complete!', 'success');
                 displaySkills(predictionData.extracted_keywords);
                 displayResults(predictionData);
                 setTimeout(() => statusBox.classList.add('hidden'), 2000);
-
             } catch (error) {
                 console.error("Workflow failed:", error);
                 updateStatus(`Error: ${error.message}`, 'error');
             }
         });
 
-        // --- Event Listeners for New Gemini Features ---
         interviewQBtn.addEventListener('click', async () => {
             if (!currentTopRole) return;
             geminiOutput.innerHTML = '<p>✨ Generating interview questions...</p>';
@@ -147,8 +180,6 @@
             }
         });
 
-
-        // --- Helper Functions ---
         function updateStatus(message, type) {
             statusBox.classList.remove('hidden', 'bg-blue-100', 'text-blue-800', 'bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800');
             statusMessage.textContent = message;
@@ -180,59 +211,33 @@
         
         async function callGeminiAPI(prompt) {
             // NOTE: This function is a SIMULATION.
-            // In a real deployed application, you would create new endpoints on your
-            // backend (e.g., /api/interview-questions) that would securely call the
-            // Gemini API. The frontend would then call those new endpoints.
-            
             console.log("Simulating Gemini API call with prompt:", prompt);
-            
-            // Simulate network delay
             await new Promise(resolve => setTimeout(resolve, 1500));
-
             if (prompt.includes("interview questions")) {
-                return `
-                    <h4>Interview Questions for ${currentTopRole}</h4>
-                    <ul>
-                        <li class="mt-2"><b>Behavioral:</b> "Can you describe a time you had to learn a new technology quickly for a project?"</li>
-                        <li class="mt-2"><b>Technical:</b> "What are the core principles of object-oriented programming?"</li>
-                        <li class="mt-2"><b>Situational:</b> "Imagine you discover a critical bug right before a major release. What are your immediate next steps?"</li>
-                        <li class="mt-2">"How do you stay updated with the latest industry trends?"</li>
-                        <li class="mt-2">"What is your approach to collaborating with a team on a large codebase?"</li>
-                    </ul>
-                `;
+                return `<h4>Interview Questions for ${currentTopRole}</h4><ul><li class="mt-2"><b>Behavioral:</b> "Can you describe a time you had to learn a new technology quickly for a project?"</li><li class="mt-2"><b>Technical:</b> "What are the core principles of object-oriented programming?"</li><li class="mt-2"><b>Situational:</b> "Imagine you discover a critical bug right before a major release. What are your immediate next steps?"</li></ul>`;
             } else if (prompt.includes("career path")) {
-                 return `
-                    <p>Based on your skills and the role of <b>${currentTopRole}</b>, a logical next step would be to aim for a Senior or Lead position. To advance, consider developing skills in these key areas:</p>
-                    <ul>
-                        <li class="mt-2"><b>System Design & Architecture:</b> To lead larger projects.</li>
-                        <li class="mt-2"><b>Mentorship & Leadership:</b> To guide junior members of the team.</li>
-                        <li class="mt-2"><b>Cloud Cost Optimization:</b> To manage resources effectively at scale.</li>
-                    </ul>
-                `;
+                 return `<p>Based on your skills and the role of <b>${currentTopRole}</b>, a logical next step would be to aim for a Senior or Lead position. To advance, consider developing skills in these key areas:</p><ul><li class="mt-2"><b>System Design & Architecture:</b> To lead larger projects.</li><li class="mt-2"><b>Mentorship & Leadership:</b> To guide junior members of the team.</li></ul>`;
             }
             return "Could not generate a response.";
         }
         
-        // --- New Gemini Feature Functions ---
         async function getInterviewQuestions(role) {
-            const prompt = `You are an expert career coach. Generate a list of 5 common and insightful interview questions for a "${role}" position. Include one behavioral question, one technical question, and one situational question. Format the response as an HTML unordered list.`;
+            const prompt = `You are an expert career coach. Generate a list of common interview questions for a "${role}" position. Format the response as an HTML unordered list.`;
             return await callGeminiAPI(prompt);
         }
 
         async function getCareerPath(role, skills) {
-            const prompt = `You are a helpful career advisor. Based on the job role "${role}" and the skills [${skills.join(', ')}], suggest a potential career path. What is a logical next step or a more senior role? What 2-3 key skills should this person learn to get there? Format the response as a short paragraph followed by an HTML unordered list for the skills.`;
+            const prompt = `You are a helpful career advisor. Based on the job role "${role}" and the skills [${skills.join(', ')}], suggest a potential career path. What is a logical next step or a more senior role? What 2-3 key skills should this person learn to get there? Format the response as a short paragraph followed by an HTML unordered list.`;
             return await callGeminiAPI(prompt);
         }
 
         async function processResumeOnBackend(text) {
             const apiUrl = 'https://job-role-suggestor-api.onrender.com/api/process_resume';
-            
             const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ resume_text: text })
             });
-
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || "Failed to process resume on the server.");
@@ -252,25 +257,15 @@
 
         function displayResults(prediction) {
             resultsBox.classList.remove('hidden');
-            
             currentTopRole = prediction.suggestions[0].role;
-            
-            topPredictionEl.innerHTML = `
-                <h4 class="text-xl font-semibold text-gray-800">${currentTopRole}</h4>
-                <p class="text-gray-600">Confidence: <span class="font-bold text-indigo-600">${prediction.suggestions[0].confidence}</span></p>
-            `;
-
+            topPredictionEl.innerHTML = `<h4 class="text-xl font-semibold text-gray-800">${currentTopRole}</h4><p class="text-gray-600">Confidence: <span class="font-bold text-indigo-600">${prediction.suggestions[0].confidence}</span></p>`;
             if (prediction.suggestions.length > 1) {
                 const secondRole = prediction.suggestions[1];
-                secondSuggestionEl.innerHTML = `
-                    <p class="font-medium text-gray-700">${secondRole.role}</p>
-                    <p class="text-sm text-gray-500">Confidence: <span class="font-semibold text-indigo-500">${secondRole.confidence}</span></p>
-                `;
+                secondSuggestionEl.innerHTML = `<p class="font-medium text-gray-700">${secondRole.role}</p><p class="text-sm text-gray-500">Confidence: <span class="font-semibold text-indigo-500">${secondRole.confidence}</span></p>`;
                 secondSuggestionContainer.classList.remove('hidden');
             } else {
                 secondSuggestionContainer.classList.add('hidden');
             }
-
             geminiFeaturesContainer.classList.remove('hidden');
         }
     </script>
