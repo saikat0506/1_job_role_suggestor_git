@@ -13,11 +13,19 @@
         }
         input[type="file"]::file-selector-button:hover { background-color: #4338ca; }
         .gemini-feature-btn {
-            background-color: #ede9fe; color: #5b21b6; font-weight: 600;
-            padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem;
-            transition: all 0.2s; border: 1px solid #c4b5fd;
+            background-color: #ede9fe; /* violet-100 */
+            color: #5b21b6; /* violet-800 */
+            font-weight: 600;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            transition: all 0.2s;
+            border: 1px solid #c4b5fd; /* violet-300 */
         }
-        .gemini-feature-btn:hover { background-color: #d8b4fe; transform: translateY(-1px); }
+        .gemini-feature-btn:hover {
+            background-color: #d8b4fe; /* violet-200 */
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body class="bg-slate-100 text-gray-800 font-sans flex items-center justify-center min-h-screen p-4">
@@ -42,25 +50,45 @@
                 <h2 class="text-2xl font-bold text-indigo-700">Top Prediction</h2>
                 <div id="top-prediction" class="mt-2 p-4 bg-slate-50 rounded-lg border-l-4 border-indigo-500"></div>
             </div>
+            <!-- New Gemini Features Section -->
+            <div id="gemini-features-container" class="hidden space-y-4">
+                <div>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-2">✨ AI-Powered Insights</h3>
+                    <div class="flex flex-wrap gap-2">
+                         <button id="interview-q-btn" class="gemini-feature-btn">Generate Interview Questions</button>
+                         <button id="career-path-btn" class="gemini-feature-btn">Suggest Career Path</button>
+                    </div>
+                </div>
+                <div id="gemini-output" class="p-4 bg-violet-50 rounded-lg border border-violet-200 text-sm text-gray-700 hidden"></div>
+            </div>
             <div>
                 <h3 class="text-xl font-semibold text-gray-700">Extracted Skills</h3>
                 <div id="extracted-skills" class="mt-2 flex flex-wrap gap-2"></div>
             </div>
-            <div>
-                <h3 class="text-xl font-semibold text-gray-700">Other Suggestions</h3>
-                <div id="other-suggestions" class="mt-2 space-y-2"></div>
+            <div id="second-suggestion-container" class="hidden">
+                <h3 class="text-xl font-semibold text-gray-700">Second Suggestion</h3>
+                <div id="second-suggestion" class="mt-2 p-3 bg-slate-50 rounded-md"></div>
             </div>
         </div>
     </div>
 
     <script>
+        // --- JAVASCRIPT LOGIC ---
+        let currentTopRole = null;
+        let currentKeywords = [];
+
         const fileInput = document.getElementById('resume-upload');
         const statusBox = document.getElementById('status-box');
         const statusMessage = document.getElementById('status-message');
         const resultsBox = document.getElementById('results-box');
         const topPredictionEl = document.getElementById('top-prediction');
-        const otherSuggestionsEl = document.getElementById('other-suggestions');
+        const secondSuggestionContainer = document.getElementById('second-suggestion-container');
+        const secondSuggestionEl = document.getElementById('second-suggestion');
         const extractedSkillsEl = document.getElementById('extracted-skills');
+        const geminiFeaturesContainer = document.getElementById('gemini-features-container');
+        const geminiOutput = document.getElementById('gemini-output');
+        const interviewQBtn = document.getElementById('interview-q-btn');
+        const careerPathBtn = document.getElementById('career-path-btn');
         
         pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js`;
 
@@ -69,19 +97,20 @@
             if (!file) return;
 
             resultsBox.classList.add('hidden');
+            geminiFeaturesContainer.classList.add('hidden');
+            geminiOutput.classList.add('hidden');
             
             try {
-                // Step 1: Parse the PDF in the browser
                 updateStatus('Parsing your resume...', 'info');
                 const resumeText = await parsePdf(file);
                 console.log("PDF Parsed.");
 
-                // Step 2: Send the text to our secure backend for all processing
                 updateStatus('Sending to server for secure analysis...', 'info');
                 const predictionData = await processResumeOnBackend(resumeText);
                 console.log("Prediction received:", predictionData);
+                
+                currentKeywords = predictionData.extracted_keywords;
 
-                // Step 3: Display the results returned from our backend
                 updateStatus('Analysis Complete!', 'success');
                 displaySkills(predictionData.extracted_keywords);
                 displayResults(predictionData);
@@ -93,6 +122,33 @@
             }
         });
 
+        // --- Event Listeners for New Gemini Features ---
+        interviewQBtn.addEventListener('click', async () => {
+            if (!currentTopRole) return;
+            geminiOutput.innerHTML = '<p>✨ Generating interview questions...</p>';
+            geminiOutput.classList.remove('hidden');
+            try {
+                const questions = await getInterviewQuestions(currentTopRole);
+                geminiOutput.innerHTML = questions;
+            } catch (error) {
+                geminiOutput.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            }
+        });
+
+        careerPathBtn.addEventListener('click', async () => {
+            if (!currentTopRole || currentKeywords.length === 0) return;
+            geminiOutput.innerHTML = '<p>✨ Suggesting a potential career path...</p>';
+            geminiOutput.classList.remove('hidden');
+            try {
+                const path = await getCareerPath(currentTopRole, currentKeywords);
+                geminiOutput.innerHTML = path;
+            } catch (error) {
+                geminiOutput.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+            }
+        });
+
+
+        // --- Helper Functions ---
         function updateStatus(message, type) {
             statusBox.classList.remove('hidden', 'bg-blue-100', 'text-blue-800', 'bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800');
             statusMessage.textContent = message;
@@ -121,9 +177,54 @@
                 fileReader.readAsArrayBuffer(file);
             });
         }
+        
+        async function callGeminiAPI(prompt) {
+            // NOTE: This function is a SIMULATION.
+            // In a real deployed application, you would create new endpoints on your
+            // backend (e.g., /api/interview-questions) that would securely call the
+            // Gemini API. The frontend would then call those new endpoints.
+            
+            console.log("Simulating Gemini API call with prompt:", prompt);
+            
+            // Simulate network delay
+            await new Promise(resolve => setTimeout(resolve, 1500));
+
+            if (prompt.includes("interview questions")) {
+                return `
+                    <h4>Interview Questions for ${currentTopRole}</h4>
+                    <ul>
+                        <li class="mt-2"><b>Behavioral:</b> "Can you describe a time you had to learn a new technology quickly for a project?"</li>
+                        <li class="mt-2"><b>Technical:</b> "What are the core principles of object-oriented programming?"</li>
+                        <li class="mt-2"><b>Situational:</b> "Imagine you discover a critical bug right before a major release. What are your immediate next steps?"</li>
+                        <li class="mt-2">"How do you stay updated with the latest industry trends?"</li>
+                        <li class="mt-2">"What is your approach to collaborating with a team on a large codebase?"</li>
+                    </ul>
+                `;
+            } else if (prompt.includes("career path")) {
+                 return `
+                    <p>Based on your skills and the role of <b>${currentTopRole}</b>, a logical next step would be to aim for a Senior or Lead position. To advance, consider developing skills in these key areas:</p>
+                    <ul>
+                        <li class="mt-2"><b>System Design & Architecture:</b> To lead larger projects.</li>
+                        <li class="mt-2"><b>Mentorship & Leadership:</b> To guide junior members of the team.</li>
+                        <li class="mt-2"><b>Cloud Cost Optimization:</b> To manage resources effectively at scale.</li>
+                    </ul>
+                `;
+            }
+            return "Could not generate a response.";
+        }
+        
+        // --- New Gemini Feature Functions ---
+        async function getInterviewQuestions(role) {
+            const prompt = `You are an expert career coach. Generate a list of 5 common and insightful interview questions for a "${role}" position. Include one behavioral question, one technical question, and one situational question. Format the response as an HTML unordered list.`;
+            return await callGeminiAPI(prompt);
+        }
+
+        async function getCareerPath(role, skills) {
+            const prompt = `You are a helpful career advisor. Based on the job role "${role}" and the skills [${skills.join(', ')}], suggest a potential career path. What is a logical next step or a more senior role? What 2-3 key skills should this person learn to get there? Format the response as a short paragraph followed by an HTML unordered list for the skills.`;
+            return await callGeminiAPI(prompt);
+        }
 
         async function processResumeOnBackend(text) {
-            // IMPORTANT: Update this URL to your live Render URL after deployment
             const apiUrl = 'https://job-role-suggestor-api.onrender.com/api/process_resume';
             
             const response = await fetch(apiUrl, {
@@ -152,22 +253,25 @@
         function displayResults(prediction) {
             resultsBox.classList.remove('hidden');
             
-            const topRole = prediction.suggestions[0];
+            currentTopRole = prediction.suggestions[0].role;
+            
             topPredictionEl.innerHTML = `
-                <h4 class="text-xl font-semibold text-gray-800">${topRole.role}</h4>
-                <p class="text-gray-600">Confidence: <span class="font-bold text-indigo-600">${topRole.confidence}</span></p>
+                <h4 class="text-xl font-semibold text-gray-800">${currentTopRole}</h4>
+                <p class="text-gray-600">Confidence: <span class="font-bold text-indigo-600">${prediction.suggestions[0].confidence}</span></p>
             `;
 
-            otherSuggestionsEl.innerHTML = '';
-            prediction.suggestions.slice(1).forEach(suggestion => {
-                const suggestionDiv = document.createElement('div');
-                suggestionDiv.className = 'p-3 bg-slate-50 rounded-md';
-                suggestionDiv.innerHTML = `
-                    <p class="font-medium text-gray-700">${suggestion.role}</p>
-                    <p class="text-sm text-gray-500">Confidence: <span class="font-semibold text-indigo-500">${suggestion.confidence}</span></p>
+            if (prediction.suggestions.length > 1) {
+                const secondRole = prediction.suggestions[1];
+                secondSuggestionEl.innerHTML = `
+                    <p class="font-medium text-gray-700">${secondRole.role}</p>
+                    <p class="text-sm text-gray-500">Confidence: <span class="font-semibold text-indigo-500">${secondRole.confidence}</span></p>
                 `;
-                otherSuggestionsEl.appendChild(suggestionDiv);
-            });
+                secondSuggestionContainer.classList.remove('hidden');
+            } else {
+                secondSuggestionContainer.classList.add('hidden');
+            }
+
+            geminiFeaturesContainer.classList.remove('hidden');
         }
     </script>
 </body>
